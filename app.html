@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapChat for Linux</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --accent:#0078d4; --accent2:#3b82f6;
+    --text:#1c1e21; --text2:#6b7280;
+    --bg:#eef1f6; --card:#ffffff;
+    --line:#e5e8ef; --line2:#dfe3ea;
+    --yellow:#ffd000; --orange:#ff7a00;
+    --shadow:0 2px 8px rgba(16,24,40,.08);
+    --shadow2:0 10px 30px rgba(16,24,40,.16);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:"Ubuntu","Noto Sans","Segoe UI","Cantarell",system-ui,sans-serif;
+    background:var(--bg); color:var(--text); height:100vh; overflow:hidden;
+  }
+  /* ----- titlebar ----- */
+  .titlebar{
+    height:44px; display:flex; align-items:center; gap:12px; padding:0 10px;
+    background:linear-gradient(180deg,#ffffff,#f7f9fc);
+    border-bottom:1px solid var(--line); z-index:50; position:relative;
+  }
+  .titlebar .logo{width:20px;height:20px;border-radius:50%; flex:0 0 auto;
+    background:radial-gradient(circle at 30% 30%,#ffe600,#ffb700 40%,#ff6a00);}
+  .titlebar .tname{font-weight:600; font-size:13px;}
+  .titlebar #whoami{font-size:12px; color:var(--text2);}
+  .winbtn{width:44px;height:32px;border:none;background:transparent;color:var(--text);
+    font-size:11px;border-radius:6px; cursor:pointer; font-family:inherit;}
+  .winbtn:hover{background:#e9edf4;}
+  .winbtn.close:hover{background:#e81123;color:#fff;}
+  .spacer{flex:1;}
+  /* ----- layout ----- */
+  .app{display:flex; height:calc(100vh - 44px);}
+  .view{flex:1; display:none; position:relative; overflow:hidden;}
+  .view.active{display:flex;}
+  /* ----- camera ----- */
+  #cameraView{flex-direction:column; background:#0f1115;}
+  .cam-stage{flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#000;}
+  #cam,#snapCanvas{position:absolute; width:100%; height:100%; object-fit:cover;}
+  #snapCanvas{display:none; z-index:5;}
+  .lens{position:absolute; font-size:64px; cursor:grab; z-index:8; filter:drop-shadow(0 4px 8px rgba(0,0,0,.4)); -webkit-user-select:none; user-select:none;}
+  .cam-top{position:absolute; top:0; left:0; right:0; z-index:9; display:flex; align-items:center; padding:14px; gap:10px;}
+  .ghost{background:rgba(15,17,21,.6); color:#fff; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer;}
+  .flash-ring{position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:30;}
+  .cam-bottom{position:absolute; bottom:0; left:0; right:0; z-index:9; display:flex; flex-direction:column; gap:12px; padding:14px; background:linear-gradient(transparent,rgba(0,0,0,.6));}
+  .filterbar{display:flex; gap:8px; overflow-x:auto; padding:4px 2px;}
+  .filterbar::-webkit-scrollbar{display:none;}
+  .chip{flex:0 0 auto; min-width:64px; text-align:center; padding:7px 10px; border-radius:14px;
+    background:rgba(255,255,255,.92); border:1px solid var(--line); font-size:12px; cursor:pointer; color:#333;}
+  .chip.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .cam-controls{display:flex; align-items:center; justify-content:center; gap:22px;}
+  .cbtn{width:52px;height:52px;border-radius:50%;border:none;background:rgba(255,255,255,.92);
+    color:#333; font-size:20px; cursor:pointer;}
+  .cbtn:active{transform:scale(.92);}
+  .shutter{width:72px;height:72px; background:linear-gradient(135deg,#ffe600,#ff7a00);
+    color:#fff; font-size:26px; border:4px solid #fff;}
+  .snap-tools{display:flex; align-items:center; gap:10px; background:#ffffff; border-radius:14px; padding:8px 12px; box-shadow:var(--shadow2);}
+  #captionInput{flex:1; border:none; outline:none; background:transparent; font-size:14px; font-family:inherit;}
+  .timer-chip{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#f7f9fc;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;}
+  .timer-chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .sendto{margin-left:auto; display:flex; gap:6px; align-items:center;}
+  #sendTo,#sendTo2{width:130px; border:1px solid var(--line); outline:none; border-radius:8px; padding:8px; font-size:13px; background:#fff; font-family:inherit;}
+  #sendBtn{background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;}
+  #backBtn{background:#eef1f6; color:#333; border:none; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;}
+  /* ----- stories ----- */
+  #storiesView{flex-direction:column; background:var(--bg); padding:24px; overflow:hidden;}
+  .page-head{font-size:20px; font-weight:600; margin-bottom:16px; display:flex; align-items:center; gap:10px;}
+  .page-head .sub{font-size:13px; color:var(--text2); font-weight:400;}
+  .story-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px; overflow-y:auto; align-content:start; padding-bottom:20px;}
+  .story-card{aspect-ratio:9/14; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:#dbe1ea;
+    box-shadow:var(--shadow); border:1px solid var(--line);}
+  .story-card img{width:100%;height:100%;object-fit:cover;}
+  .story-card .meta{position:absolute; left:0;right:0;bottom:0; padding:18px 8px 8px; font-size:12px; color:#fff;
+    background:linear-gradient(transparent,rgba(0,0,0,.7));}
+  .story-card .vonce{position:absolute; top:8px; right:8px; background:rgba(239,68,68,.9); color:#fff; font-size:10px; padding:3px 7px; border-radius:20px;}
+  .story-empty{grid-column:1/-1; text-align:center; color:var(--text2); padding:60px 0;}
+  #storyViewer{position:fixed; inset:0; background:#000; z-index:100; display:none; align-items:center; justify-content:center;}
+  #storyViewer.active{display:flex;}
+  #storyImg{max-width:100%; max-height:100%; object-fit:contain;}
+  #storyCaption{position:absolute; bottom:60px; left:0; right:0; text-align:center; color:#fff; font-size:20px; text-shadow:0 2px 8px rgba(0,0,0,.6);}
+  #storyFrom{position:absolute; top:20px; left:20px; color:#fff; font-weight:600; text-shadow:0 2px 6px rgba(0,0,0,.6);}
+  #storyClose{position:absolute; top:14px; right:14px; width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer;}
+  #storyBar{position:absolute; top:0; left:0; right:0; height:4px; background:rgba(255,255,255,.25);}
+  #storyBarFill{height:100%; width:0%; background:#fff; transition:width .1s linear;}
+  /* ----- chat ----- */
+  #chatView{flex-direction:row; background:var(--bg);}
+  .conv-list{width:280px; border-right:1px solid var(--line); display:flex; flex-direction:column; background:#fff;}
+  .conv-head{padding:16px; font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;}
+  .conv{display:flex; align-items:center; gap:12px; padding:12px 16px; cursor:pointer; border-bottom:1px solid var(--line2);}
+  .conv:hover{background:#f2f6fc;}
+  .avatar{width:42px;height:42px;border-radius:50%; background:linear-gradient(135deg,#8ecae6,#219ebc); color:#fff; display:flex;align-items:center;justify-content:center;font-weight:600; flex:0 0 auto;}
+  .conv .name{font-weight:500; font-size:14px;}
+  .chat-panel{flex:1; display:flex; flex-direction:column; background:#fbfcfe;}
+  .chat-empty{flex:1; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:14px;}
+  .msgs{flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px;}
+  .bubble{max-width:65%; padding:9px 13px; border-radius:16px; font-size:14px; line-height:1.4; word-break:break-word;}
+  .mine{align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:5px;}
+  .theirs{align-self:flex-start; background:#e9edf4; border-bottom-left-radius:5px;}
+  .bubble .gone{font-size:10px; opacity:.7; display:block; margin-top:3px;}
+  .chat-input{display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); background:#fff;}
+  #chatText{flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:14px; outline:none; font-family:inherit;}
+  #chatSend{background:var(--accent); color:#fff; border:none; border-radius:10px; padding:0 18px; font-size:14px; cursor:pointer;}
+  .chat-timers{display:flex; gap:6px; align-items:center; padding:0 16px 2px; font-size:11px; color:var(--text2);}
+  /* ----- friends ----- */
+  #friendsView{flex-direction:column; background:var(--bg); padding:24px; overflow:hidden;}
+  .add-row{display:flex; gap:8px; max-width:420px; margin-bottom:16px;}
+  .add-row input{flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:14px; outline:none; font-family:inherit;}
+  .add-row button{background:var(--accent); color:#fff; border:none; border-radius:10px; padding:0 16px; cursor:pointer;}
+  .friend-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line2);}
+  /* ----- taskbar ----- */
+  .taskbar{height:56px; background:#fff; border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; gap:10px;}
+  .task{width:48px;height:48px;border-radius:8px;border:none;background:transparent;font-size:21px;cursor:pointer;position:relative;}
+  .task:hover{background:#f0f3f9;}
+  .task.on::after{content:""; position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
+    width:5px;height:5px;border-radius:50%;background:var(--accent);}
+  /* ----- map ----- */
+  #mapView{flex-direction:column; background:var(--bg); overflow:hidden;}
+  #map{flex:1; width:100%; background:#dbe1ea;}
+  .map-meta{position:absolute; left:0;right:0;top:0; z-index:1000; display:flex; gap:8px; align-items:center;
+    padding:10px 12px; background:rgba(10,12,16,.85); border-bottom:1px solid rgba(255,255,255,.08);
+    font-size:12px; color:#fff; backdrop-filter:blur(6px);}
+  .map-meta .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex:0 0 auto;}
+  .map-meta.off .dot{background:#ef4444;}
+  .map-legend{position:absolute; left:12px; bottom:16px; z-index:1000; background:rgba(10,12,16,.85);
+    border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px 12px; font-size:12px; color:#fff;
+    box-shadow:0 4px 16px rgba(0,0,0,.4); backdrop-filter:blur(6px);}
+  #mapView{background:#0b0d11;}
+  #map{background:#0b0d11;}
+  /* ----- login ----- */
+  #login{position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(160deg,#eef6ff 0%,#f6f0ff 50%,#fff4ea 100%);}
+  .login-card{width:340px; background:#fff; border:1px solid var(--line);
+    border-radius:18px; padding:28px; box-shadow:var(--shadow2); text-align:center;}
+  .login-logo{width:56px;height:56px;border-radius:50%;margin:0 auto 12px;
+    background:radial-gradient(circle at 30% 30%,#ffe600,#ffb700 40%,#ff6a00);}
+  .login-card h1{font-size:22px; margin-bottom:4px;}
+  .login-card p{font-size:13px; color:var(--text2); margin-bottom:18px;}
+  #loginName{width:100%; border:1px solid var(--line); border-radius:10px; padding:11px 12px; font-size:14px; outline:none; margin-bottom:10px; font-family:inherit;}
+  #loginName:focus{border-color:var(--accent);}
+  #loginBtn{width:100%; background:var(--accent); color:#fff; border:none; border-radius:10px; padding:11px; font-size:14px; cursor:pointer;}
+  #loginBtn:hover{background:#0067c0;}
+  .toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(28,30,33,.92); color:#fff;
+    padding:10px 18px; border-radius:10px; font-size:13px; z-index:300; opacity:0; transition:opacity .25s; pointer-events:none;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="logo"></div>
+  <span class="tname">SnapChat for Linux</span>
+  <span id="whoami" style="font-size:12px;color:var(--text2)"></span>
+  <div class="spacer"></div>
+  <button class="winbtn" title="Minimize">&#xE921;</button>
+  <button class="winbtn" title="Maximize">&#xE922;</button>
+  <button class="winbtn close" title="Close">&#xE8BB;</button>
+</div>
+
+<div class="app">
+  <!-- CAMERA -->
+  <section class="view active" id="cameraView">
+    <div class="cam-stage">
+      <video id="cam" autoplay playsinline muted></video>
+      <canvas id="snapCanvas"></canvas>
+      <div class="flash-ring" id="flashRing"></div>
+      <div class="cam-top">
+        <span class="ghost" id="filtersGhost" style="display:none"></span>
+      </div>
+      <div class="cam-bottom">
+        <div class="filterbar" id="filterBar"></div>
+        <div class="snap-tools" id="liveTools">
+          <span class="ghost" style="background:rgba(0,0,0,.35);color:#fff;font-size:12px;padding:7px 10px;border-radius:8px;">Lenses</span>
+          <span class="timer-chip on" data-t="-1" title="View once">&#x1F512;</span>
+          <span class="timer-chip" data-t="10">10s</span>
+          <span class="timer-chip" data-t="30">30s</span>
+          <span class="timer-chip" data-t="0">&#x221E;</span>
+          <div class="sendto">
+            <select id="sendTo"><option value="">Send to...</option></select>
+            <button id="shutterBtn" class="cbtn shutter" style="width:48px;height:48px;font-size:18px;">&#x1F4F7;</button>
+          </div>
+        </div>
+        <div class="snap-tools" id="previewTools" style="display:none">
+          <input id="captionInput" placeholder="Add a caption...">
+          <span class="timer-chip on" data-t="-1" title="View once">&#x1F512;</span>
+          <span class="timer-chip" data-t="10">10s</span>
+          <span class="timer-chip" data-t="30">30s</span>
+          <span class="timer-chip" data-t="0">&#x221E;</span>
+          <div class="sendto">
+            <select id="sendTo2"><option value="">Send to...</option></select>
+            <button id="sendBtn">Send &#x27A4;</button>
+            <button id="backBtn">&#x2715;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STORIES -->
+  <section class="view" id="storiesView">
+    <div class="page-head">&#x1F525; Stories <span class="sub">snaps sent to you</span></div>
+    <div class="story-grid" id="storyGrid"></div>
+  </section>
+
+  <!-- CHAT -->
+  <section class="view" id="chatView">
+    <div class="conv-list">
+      <div class="conv-head">&#x1F4AC; Chats</div>
+      <div id="convList" style="flex:1; overflow-y:auto;"></div>
+      <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:6px;">
+        <input id="newFriend" placeholder="Add friend..." style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px;font-size:13px;outline:none;font-family:inherit;">
+        <button onclick="addFriend()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:0 12px;cursor:pointer;">+</button>
+      </div>
+    </div>
+    <div class="chat-panel">
+      <div class="chat-empty" id="chatEmpty">Pick a conversation</div>
+      <div class="msgs" id="msgs" style="display:none"></div>
+      <div class="chat-timers" id="chatTimers" style="display:none">
+        Disappear after:
+        <span class="timer-chip on" data-t="0">never</span>
+        <span class="timer-chip" data-t="5">5s</span>
+        <span class="timer-chip" data-t="30">30s</span>
+        <span class="timer-chip" data-t="-1">view once</span>
+      </div>
+      <div class="chat-input" id="chatInputRow" style="display:none">
+        <input id="chatText" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="locBtn" title="Share my location" onclick="shareLoc()" style="background:#111;color:#ffd000;border:none;border-radius:10px;padding:0 14px;font-size:16px;cursor:pointer;">&#x1F30D;</button>
+        <button id="chatSend" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FRIENDS -->
+  <section class="view" id="friendsView">
+    <div class="page-head">&#x1F465; Friends</div>
+    <div class="add-row">
+      <input id="friendAddInput" placeholder="Add friend by name...">
+      <button onclick="addFriendFromPage()">Add</button>
+    </div>
+    <div id="friendList" style="max-width:420px;"></div>
+  </section>
+
+  <!-- MAP -->
+  <section class="view" id="mapView">
+    <div class="map-meta off" id="mapMeta"><span class="dot"></span><span id="mapStatus">Location off</span></div>
+    <div id="map"></div>
+    <div class="map-legend">&#x1F534; You &nbsp;&middot;&nbsp; &#x1F535; Friends</div>  </section>
+</div>
+
+<div class="taskbar">
+  <button class="task on" data-view="cameraView" title="Camera">&#x1F4F7;</button>
+  <button class="task" data-view="storiesView" title="Stories">&#x1F525;</button>
+  <button class="task" data-view="chatView" title="Chat">&#x1F4AC;</button>
+  <button class="task" data-view="friendsView" title="Friends">&#x1F465;</button>
+  <button class="task" data-view="mapView" title="Map">&#x1F5FA;&#xFE0F;</button>
+</div>
+
+<!-- story viewer -->
+<div id="storyViewer">
+  <div id="storyBar"><div id="storyBarFill"></div></div>
+  <span id="storyFrom"></span>
+  <button id="storyClose">&#x2715;</button>
+  <img id="storyImg">
+  <div id="storyCaption"></div>
+</div>
+
+<!-- login -->
+<div id="login">
+  <div class="login-card">
+    <div class="login-logo"></div>
+    <h1>SnapChat</h1>
+    <p>for Linux</p>
+    <input id="loginName" placeholder="Your username" autocomplete="off">
+    <button id="loginBtn">Enter &#x27A4;</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const api = (path, body) => fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body||{})})
+  .then(r => r.json());
+
+let ME = localStorage.getItem('scuser') || '';
+let friends = [];
+let conv = null;            // active conversation partner
+let msgTimer = 0;           // selected chat disappear timer
+let pollTimer = null;
+let storyTimer = null;
+let lastLoc = null;         // last known GPS position
+
+// ---------------- camera ----------------
+let stream = null, facing = false, filterIdx = 0, snapTimer = -1, snapShot = null;
+const FILTERS = [
+  {name:'Normal', css:''},
+  {name:'B&W', css:'grayscale(1)'},
+  {name:'Sepia', css:'sepia(1)'},
+  {name:'Vivid', css:'contrast(1.3) saturate(1.5)'},
+  {name:'Invert', css:'invert(1) hue-rotate(180deg)'},
+  {name:'Drama', css:'contrast(1.8) brightness(1.05)'},
+  {name:'Blur', css:'blur(1.5px)'},
+  {name:'Night', css:'brightness(.7) contrast(1.4) saturate(1.3)'},
+];
+const LENSES = ['&#x1F436;','&#x1F383;','&#x1F49C;','&#x1F60E;','&#x1F576;','&#x1F921;','&#x1F47B;','&#x1F451;'];
+let lensEls = [];
+
+function buildFilterBar(){
+  const bar = $('filterBar'); bar.innerHTML = '';
+  FILTERS.forEach((f,i)=>{
+    const c = document.createElement('div');
+    c.className = 'chip' + (i===0?' on':'');
+    c.textContent = f.name;
+    c.onclick = () => { bar.querySelectorAll('.chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); filterIdx=i; applyFilter(); };
+    bar.appendChild(c);
+  });
+}
+
+function applyFilter(){
+  $('cam').style.filter = FILTERS[filterIdx].css;
+}
+
+function initCamera(){
+  navigator.mediaDevices.getUserMedia({video:{facingMode: facing?'environment':'user'}, audio:false})
+    .then(s => { stream = s; $('cam').srcObject = s; })
+    .catch(() => toast('Camera unavailable — check permissions'));
+}
+
+function switchCam(){
+  facing = !facing;
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  initCamera();
+}
+
+// lenses
+function addLens(){
+  const stage = document.querySelector('.cam-stage');
+  const el = document.createElement('div');
+  el.className = 'lens';
+  el.innerHTML = LENSES[Math.floor(Math.random()*LENSES.length)];
+  el.style.left = (20 + Math.random()*50) + '%';
+  el.style.top = (15 + Math.random()*45) + '%';
+  el.style.transform = 'translate(-50%,-50%) rotate(' + (Math.random()*30-15) + 'deg)';
+  dragLens(el);
+  stage.appendChild(el);
+  lensEls.push(el);
+}
+
+function dragLens(el){
+  let sx, sy, mx, my;
+  el.addEventListener('mousedown', e => { sx=e.clientX; sy=e.clientY; mx=el.offsetLeft; my=el.offsetTop; document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu, {once:true}); e.preventDefault(); });
+  function mm(e){ el.style.left = (mx+e.clientX-sx)+'px'; el.style.top = (my+e.clientY-sy)+'px'; }
+  function mu(){ document.removeEventListener('mousemove', mm); }
+}
+
+// capture
+function capture(){
+  const video = $('cam');
+  if(!video.videoWidth) { toast('No camera feed'); return; }
+  const cv = $('snapCanvas');
+  cv.width = video.videoWidth; cv.height = video.videoHeight;
+  const ctx = cv.getContext('2d');
+  ctx.filter = FILTERS[filterIdx].css;
+  ctx.drawImage(video, 0, 0, cv.width, cv.height);
+  ctx.filter = 'none';
+  const stage = document.querySelector('.cam-stage');
+  const rect = stage.getBoundingClientRect();
+  lensEls.forEach(el => {
+    const x = (el.offsetLeft + el.offsetWidth/2 - rect.left) / rect.width * cv.width;
+    const y = (el.offsetTop + el.offsetHeight/2 - rect.top) / rect.height * cv.height;
+    const s = cv.width / rect.width;
+    ctx.font = (70*s) + 'px serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(el.innerHTML.replace(/&#\d+;/g, ch => String.fromCodePoint(+ch.slice(2,-1))), x, y);
+  });
+  snapShot = cv.toDataURL('image/jpeg', .82);
+  $('cam').style.display='none'; cv.style.display='block';
+  $('liveTools').style.display='none'; $('previewTools').style.display='flex';
+}
+
+function resetPreview(){
+  snapShot = null;
+  $('snapCanvas').style.display='none'; $('cam').style.display='block';
+  $('previewTools').style.display='none'; $('liveTools').style.display='flex';
+}
+
+async function sendSnap(){
+  const to = $('sendTo2').value;
+  const to2 = $('sendTo').value;
+  const target = to || to2;
+  if(!snapShot) { toast('Take a picture first'); return; }
+  if(!target) { toast('Pick who to send it to'); return; }
+  const caption = $('captionInput').value;
+  const ttl = +document.querySelector('#previewTools .timer-chip.on').dataset.t;
+  const r = await api('/api/snap', {to:target, from:ME, img:snapShot, caption, timer:ttl});
+  if(r.ok){ toast('Sent to ' + target + (ttl<0?' (view once)':'')); }
+  else toast(r.error||'Failed to send');
+  $('captionInput').value='';
+  resetPreview();
+}
+
+// timer chip logic (works for both bars)
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.timer-chip');
+  if(!chip) return;
+  chip.parentElement.querySelectorAll('.timer-chip').forEach(c=>c.classList.remove('on'));
+  chip.classList.add('on');
+  if(chip.closest('#chatTimers')) msgTimer = +chip.dataset.t;
+  else snapTimer = +chip.dataset.t;
+});
+
+// ---------------- stories ----------------
+async function loadStories(){
+  const r = await api('/api/stories', {user:ME});
+  const grid = $('storyGrid');
+  grid.innerHTML = '';
+  if(!r.stories || !r.stories.length){
+    grid.innerHTML = '<div class="story-empty">No snaps yet.<br>Send one from the camera tab!</div>';
+    return;
+  }
+  r.stories.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'story-card';
+    card.innerHTML = '<img src="'+s.img+'"><div class="meta">@'+s.from+(s.caption?' &middot; '+s.caption:'')+'</div>' + (s.ttl<0?'<div class="vonce">VIEW ONCE</div>':'');
+    card.onclick = () => viewStory(s.id);
+    grid.appendChild(card);
+  });
+}
+
+function viewStory(id){
+  api('/api/view', {id}).then(r => {
+    if(!r.id){ toast('That snap is gone'); return; }
+    $('storyViewer').classList.add('active');
+    $('storyImg').src = r.img;
+    $('storyFrom').textContent = '@' + r.from;
+    $('storyCaption').textContent = r.caption || '';
+    const dur = r.destroy ? 5 : (r.ttl>0 ? Math.min(r.ttl, 24*3600) : 60);
+    if(r.destroy) toast('Viewed once — deleted');
+    let left = dur, last = Date.now();
+    $('storyBarFill').style.width = '0%';
+    clearInterval(storyTimer);
+    storyTimer = setInterval(() => {
+      const now = Date.now();
+      $('storyBarFill').style.width = Math.min(100, (1-left/dur)*100) + '%';
+      left -= (now-last)/1000; last = now;
+      if(left<=0) closeStory();
+    }, 100);
+  });
+}
+function closeStory(){ clearInterval(storyTimer); $('storyViewer').classList.remove('active'); }
+$('storyClose').onclick = closeStory;
+
+// ---------------- chat ----------------
+async function loadConvs(){
+  const r = await api('/api/friends', {user:ME});
+  friends = r.friends || [];
+  const list = $('convList'); list.innerHTML='';
+  if(!friends.length){ list.innerHTML = '<div style="padding:16px;color:var(--text2);font-size:13px;">Add friends to start chatting.</div>'; return; }
+  friends.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'conv';
+    row.innerHTML = '<div class="avatar">'+f[0].toUpperCase()+'</div><div><div class="name">@'+f+'</div></div>';
+    row.onclick = (e) => openConv(f, e.currentTarget);
+    list.appendChild(row);
+  });
+}
+
+function openConv(f, el){
+  conv = f;
+  document.querySelectorAll('.conv').forEach(c=>c.style.background='');
+  if(el) el.style.background = 'var(--accent-soft)';
+  $('chatEmpty').style.display='none';
+  $('msgs').style.display='flex'; $('chatInputRow').style.display='flex'; $('chatTimers').style.display='flex';
+  loadHistory();
+  api('/api/chat/read', {user:ME, other:conv});
+}
+
+async function loadHistory(){
+  const r = await api('/api/chat/history', {user:ME, other:conv});
+  const box = $('msgs'); box.innerHTML='';
+  (r.messages||[]).forEach(m => {
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (m.from===ME?'mine':'theirs');
+    if(m.loc){
+      const mid = 'loc_' + m.id;
+      b.innerHTML = '<div style="font-size:11px;opacity:.85;margin-bottom:4px;">&#x1F30D; Location</div>' +
+        '<div class="loc-card" id="'+mid+'" style="width:220px;height:130px;border-radius:10px;overflow:hidden;cursor:pointer;position:relative;"></div>' +
+        '<div style="font-size:10px;opacity:.7;margin-top:4px;">'+m.loc.lat.toFixed(5)+', '+m.loc.lng.toFixed(5)+'</div>';
+      b.onclick = () => openSharedLoc(m.loc.lat, m.loc.lng);
+      setTimeout(() => { try{ miniMap(mid, m.loc.lat, m.loc.lng); }catch(e){} }, 50);
+    } else {
+      b.textContent = m.text;
+    }
+    if(m.ttl === -1) b.innerHTML += '<span class="gone">&#x1F512; disappears when read</span>';
+    else if(m.ttl > 0) b.innerHTML += '<span class="gone">auto-delete '+m.ttl+'s</span>';
+    box.appendChild(b);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function miniMap(id, lat, lng){
+  const el = $(id); if(!el || typeof L === 'undefined') return;
+  const m = L.map(el, {zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false}).setView([lat,lng], 15);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {subdomains:'abcd', attribution:''}).addTo(m);
+  L.marker([lat,lng]).setIcon(L.divIcon({className:'', iconSize:[26,26], html:'<div style="width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ffe600,#ffb700 45%,#ff6a00);border:3px solid #fff;"></div>'})).addTo(m);
+}
+
+function openSharedLoc(lat, lng){
+  switchView('mapView');
+  if(!mapObj){ toast('Open Map tab to see it'); return; }
+  mapObj.setView([lat, lng], 16);
+}
+
+async function sendChat(){
+  const text = $('chatText').value.trim();
+  if(!text || !conv) return;
+  $('chatText').value='';
+  await api('/api/chat/send', {from:ME, to:conv, text, ttl:msgTimer});
+  loadHistory();
+}
+
+function shareLoc(){
+  if(!conv) return;
+  if(!lastLoc){ toast('Get a GPS fix first — open the Map tab once'); return; }
+  api('/api/chat/send', {from:ME, to:conv, text:'\uD83D\uDF0D Shared my live location', ttl:msgTimer, lat:lastLoc.lat, lng:lastLoc.lng})
+    .then(() => { toast('Location sent to @' + conv); loadHistory(); });
+}
+
+async function addFriend(){
+  const name = $('newFriend').value.trim();
+  if(!name) return;
+  const r = await api('/api/friends/add', {user:ME, name});
+  if(r.friends){ friends=r.friends; $('newFriend').value=''; loadConvs(); refreshFriendLists(); }
+  else toast(r.error||'Could not add');
+}
+function addFriendFromPage(){
+  $('newFriend').value = $('friendAddInput').value; addFriend(); $('friendAddInput').value='';
+}
+
+function refreshFriendLists(){
+  const sel = $('sendTo'), sel2 = $('sendTo2'), fl = $('friendList');
+  [sel,sel2].forEach(s=>{
+    const keep = s.value;
+    s.innerHTML = '<option value="">'+(s===sel?'Send to...':'Send to...')+'</option>';
+    friends.forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent='@'+f; s.appendChild(o); });
+    s.value = keep && friends.includes(keep) ? keep : '';
+  });
+  fl.innerHTML='';
+  friends.forEach(f=>{
+    const row = document.createElement('div');
+    row.className='friend-row';
+    row.innerHTML = '<div class="avatar">'+f[0].toUpperCase()+'</div><span style="font-size:14px;">@'+f+'</span>';
+    fl.appendChild(row);
+  });
+}
+
+// ---------------- view switching ----------------
+function switchView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('cameraView').classList.toggle('active', name==='cameraView');
+  if(name==='storiesView'){ $('storiesView').classList.add('active'); loadStories(); }
+  if(name==='chatView'){ $('chatView').classList.add('active'); loadConvs(); }
+  if(name==='friendsView'){ $('friendsView').classList.add('active'); refreshFriendLists(); }
+  if(name==='mapView'){ $('mapView').classList.add('active'); if(mapObj) mapObj.invalidateSize(); getPosition(); startMapPoll(); }
+  document.querySelectorAll('.task').forEach(t=>t.classList.toggle('on', t.dataset.view===name));
+}
+document.querySelectorAll('.task').forEach(t=>t.onclick=()=>switchView(t.dataset.view));
+
+// ---------------- map ----------------
+let mapObj = null, myMarker = null, friendMarkers = {}, mapTimer = null;
+const friendColors = ['#3b82f6','#a855f7','#ec4899','#f59e0b','#10b981','#ef4444'];
+
+function locOn(){ $('mapMeta').classList.remove('off'); $('mapStatus').textContent = 'Location on'; }
+function locOff(msg){ $('mapMeta').classList.add('off'); $('mapStatus').textContent = msg || 'Location off'; }
+
+function startMapPoll(){
+  if(mapTimer) clearInterval(mapTimer);
+  mapTimer = setInterval(() => { if($('mapView').classList.contains('active')) loadLocations(); }, 4000);
+}
+
+function getPosition(){
+  if(!navigator.geolocation){ locOff('No geolocation in this browser'); return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    const co = {lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6)};
+    lastLoc = co;
+    api('/api/location', {user:ME, lat:co.lat, lng:co.lng});
+    if(!mapObj){
+      mapObj = L.map('map', {zoomControl:false}).setView([co.lat, co.lng], 14);
+      L.control.zoom({position:'bottomright'}).addTo(mapObj);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains:'abcd'
+      }).addTo(mapObj);
+    }
+    if(!myMarker){
+      myMarker = L.marker([co.lat, co.lng], {title:'@'+ME}).addTo(mapObj);
+      myMarker.setIcon(L.divIcon({className:'', iconSize:[42,42],
+        html:'<div style="width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ffe600,#ffb700 45%,#ff6a00);border:3px solid #fff;box-shadow:0 2px 12px rgba(255,200,0,.6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;border-radius:50%;">'+ME[0].toUpperCase()+'</div>'}));
+      myMarker.bindPopup('@'+ME+' (you)');
+    } else {
+      myMarker.setLatLng([co.lat, co.lng]);
+      mapObj.setView([co.lat, co.lng], mapObj.getZoom());
+    }
+    locOn(); loadLocations();
+  }, err => locOff(err.code===1 ? 'Location denied — allow it in Chrome' : 'Location unavailable'),
+     {enableHighAccuracy:true, timeout:10000});
+}
+
+async function loadLocations(){
+  if(!mapObj) return;
+  const r = await api('/api/locations', {user:ME});
+  const locs = r.locations || {};
+  const names = Object.keys(locs).filter(n => n !== ME);
+  Object.keys(friendMarkers).forEach(n => {
+    if(!locs[n]){ mapObj.removeLayer(friendMarkers[n]); delete friendMarkers[n]; }
+  });
+  names.forEach((n, i) => {
+    const d = locs[n];
+    if(friendMarkers[n]){ friendMarkers[n].setLatLng([d.lat, d.lng]); return; }
+    const m = L.marker([d.lat, d.lng], {title:'@'+n});
+    const col = friendColors[i%friendColors.length];
+    m.setIcon(L.divIcon({className:'', iconSize:[38,38],
+      html:'<div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,'+col+',#1d1f26);border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:14px;">'+n[0].toUpperCase()+'</div>'}));
+    m.bindPopup('@'+n);
+    m.addTo(mapObj);
+    friendMarkers[n] = m;
+  });
+}
+
+// ---------------- boot ----------------
+function toast(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+$('loginBtn').onclick = async () => {
+  const name = $('loginName').value.trim();
+  if(!name){ toast('Enter a name'); return; }
+  const r = await api('/api/login', {name});
+  if(r.ok){ ME = name; localStorage.setItem('scuser', name); $('whoami').textContent='@'+name; $('login').style.display='none'; start(); }
+};
+
+function start(){
+  buildFilterBar();
+  initCamera();
+  refreshFriendLists();
+  loadConvs();
+  setInterval(()=>{ if(conv){ loadHistory(); api('/api/chat/read',{user:ME,other:conv}); } }, 4000);
+  setInterval(loadStories, 5000);
+}
+
+$('shutterBtn').onclick = capture;
+$('sendBtn').onclick = sendSnap;
+$('backBtn').onclick = resetPreview;
+
+document.querySelector('.cam-top').innerHTML = '<span class="ghost" id="lensAdd" title="Add lens">&#x1F3AC; Lens</span><span class="ghost" id="switchBtn2" style="margin-left:auto;" title="Switch camera">&#x1F504;</span>';
+$('lensAdd').onclick = addLens;
+$('switchBtn2').onclick = switchCam;
+
+if(ME){ $('login').style.display='none'; $('whoami').textContent='@'+ME; start(); }
+</script>
+</body>
+</html>
