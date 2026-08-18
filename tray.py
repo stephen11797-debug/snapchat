@@ -93,7 +93,7 @@ def turn_off():
         _wmctrl(["-i", "-c", wid])
     try:
         subprocess.Popen(
-            ["pkill", "-f", APP["profile"]],
+            ["pkill", "-f", os.path.expanduser(APP["profile"])],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except Exception:
