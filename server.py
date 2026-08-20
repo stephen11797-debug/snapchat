@@ -33,7 +33,6 @@ chat = {}           # (a,b) sorted -> {"rev":int,"msgs":[{id,from,to,text,ttl,ts
 last_seen = {}      # (a,b) -> last read rev (unused extra)
 locs = {}           # name -> {"lat":float,"lng":float,"ts":int}
 
-
 def _key(a, b):
     return tuple(sorted([a, b]))
 
@@ -97,6 +96,7 @@ def save_media_remove(name):
         os.remove(os.path.join(MEDIA, name))
     except OSError:
         pass
+
 
 
 def find_html():
